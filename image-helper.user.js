@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.9
+// @version      1.20.10
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -257,8 +257,20 @@
 }
 
 .tm-topbar{
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 8;
   display:flex; align-items:center; gap: 8px; padding: 6px 10px;
   flex-wrap: wrap;
+  transition: transform .28s cubic-bezier(.4,0,.2,1), opacity .22s ease;
+}
+/* 顶栏与缩略图侧栏联动自动隐藏（v1.20.10） */
+.tm-topbar.tm-chrome-hidden{
+  transform: translateY(-110%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .tm-top-left{ display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
@@ -525,7 +537,7 @@
 /* ===== 右侧缩略图索引条：v1.20.9 浮动 + 自动隐藏，隐藏时不占布局、图片铺满 ===== */
 .tm-strip-panel{
   position: absolute;
-  top: 0;
+  top: 44px;
   right: 0;
   bottom: 0;
   width: 128px;
@@ -571,6 +583,28 @@
 }
 .tm-strip-handle.tm-handle-show{ opacity: 0.55; pointer-events: auto; }
 .tm-strip-handle.tm-handle-show:hover{ opacity: 1; background: rgba(255,255,255,0.14); }
+
+/* 侧栏展开时左缘的手动收起标签（v1.20.10） */
+.tm-strip-close{
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--tm-border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  background: rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.tm-strip-close:hover{ background: rgba(255,255,255,0.16); color: #fff; }
 
 .tm-strip{
   display:flex;
@@ -2388,8 +2422,7 @@
             position: fixed; inset: 0;
             background: rgba(0,0,0,0.90);
             z-index: 2147483646;
-            display: grid;
-            grid-template-rows: auto 1fr;
+            display: block;
             color: rgba(255,255,255,0.92);
             overflow: hidden;
         `;
@@ -2434,9 +2467,10 @@
                 </div>
 
                 <div class="tm-strip-panel" id="tm-strip-panel">
+                    <button id="tm-strip-close" class="tm-strip-close" title="收起缩略图与标题栏">‹</button>
                     <div id="tm-strip" class="tm-strip"></div>
                 </div>
-                <button id="tm-strip-handle" class="tm-strip-handle" title="显示/隐藏缩略图索引">›</button>
+                <button id="tm-strip-handle" class="tm-strip-handle" title="显示缩略图与标题栏">›</button>
             </div>
         `;
     const $ = (sel) => overlay.querySelector(sel);
@@ -2461,52 +2495,66 @@
       runLoadMoreRebuild(getCurrentRawUrl())
     );
 
-    // ===== v1.20.9：缩略图条浮动 + 自动隐藏 =====
-    // 绝对定位浮动在画布上，不占布局 → 收起时主图铺满整个页面；
-    // 展开后指针离开即延时自动收起，收起后右缘出现拉手可点击重新展开。
+    // ===== v1.20.10：顶栏 + 缩略图侧栏 = 联动的浮动「外壳」，手动开合 + 自动隐藏 =====
+    // 两者都是浮动层，显示/隐藏都不改变画布尺寸 → 图片始终铺满页面；
+    // 右缘 › 拉手手动展开，侧栏左缘 ‹ 标签手动收起；指针离开后延时自动隐藏。
     const stripPanel = $("#tm-strip-panel");
     const stripHandle = $("#tm-strip-handle");
+    const stripClose = $("#tm-strip-close");
+    const topbarEl = overlay.querySelector(".tm-topbar");
     const stageEl = overlay.querySelector(".tm-stage");
-    let stripHideTimer = null;
+    let chromeHideTimer = null;
 
-    function showStrip() {
-      clearTimeout(stripHideTimer);
+    function chromeHovered() {
+      return (
+        (stripPanel && stripPanel.matches(":hover")) ||
+        (topbarEl && topbarEl.matches(":hover"))
+      );
+    }
+    function showChrome() {
+      clearTimeout(chromeHideTimer);
       stripPanel.classList.remove("tm-strip-hidden");
       stripHandle.classList.remove("tm-handle-show");
+      topbarEl.classList.remove("tm-chrome-hidden");
       stageEl.classList.add("tm-strip-open");
     }
-    function hideStrip() {
-      if (!stripPanel || !stripPanel.isConnected) return;
+    function hideChrome() {
+      if (!overlay || !stripPanel || !stripPanel.isConnected) return;
       stripPanel.classList.add("tm-strip-hidden");
       stripHandle.classList.add("tm-handle-show");
+      topbarEl.classList.add("tm-chrome-hidden");
       stageEl.classList.remove("tm-strip-open");
     }
-    function scheduleStripHide(delay = 1200) {
-      clearTimeout(stripHideTimer);
-      stripHideTimer = setTimeout(function tick() {
+    function scheduleChromeHide(delay = 1200) {
+      clearTimeout(chromeHideTimer);
+      chromeHideTimer = setTimeout(function tick() {
         if (!overlay || !stripPanel || !stripPanel.isConnected) return;
-        // 指针还停在面板上则继续等待
-        if (stripPanel.matches(":hover")) {
-          stripHideTimer = setTimeout(tick, 1500);
+        // 指针还停在外壳（顶栏或侧栏）上则继续等待
+        if (chromeHovered()) {
+          chromeHideTimer = setTimeout(tick, 1500);
           return;
         }
-        hideStrip();
+        hideChrome();
       }, delay);
     }
 
+    // 手动开合：右缘 › 展开（顶栏一起出现）；侧栏左缘 ‹ 收起（顶栏一起隐藏）
     bindClick(stripHandle, () => {
-      showStrip();
-      scheduleStripHide(3000);
+      showChrome();
+      scheduleChromeHide(3000);
     });
-    stripPanel.addEventListener("mouseenter", () => clearTimeout(stripHideTimer));
-    stripPanel.addEventListener("mouseleave", () => scheduleStripHide(1200));
+    bindClick(stripClose, () => hideChrome());
+    [stripPanel, topbarEl].forEach((el) => {
+      el.addEventListener("mouseenter", () => clearTimeout(chromeHideTimer));
+      el.addEventListener("mouseleave", () => scheduleChromeHide(1200));
+    });
     stageEl.addEventListener("mousemove", () => {
       if (!stripPanel || !stripPanel.isConnected) return;
-      if (!stripPanel.matches(":hover")) scheduleStripHide(900);
+      if (!chromeHovered()) scheduleChromeHide(900);
     });
-    // 打开画廊先展示 3 秒，随后自动隐藏（指针停留在面板上则顺延）
-    showStrip();
-    scheduleStripHide(3000);
+    // 打开画廊先整体展示 3 秒，随后自动隐藏
+    showChrome();
+    scheduleChromeHide(3000);
 
     const copyBtnTimers = new WeakMap();
     function flashCopiedButton(btn) {
