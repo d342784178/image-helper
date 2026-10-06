@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.5
+// @version      1.20.6
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -11,6 +11,7 @@
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
@@ -2903,14 +2904,30 @@
   }
 
   // =========================================================
-  // 菜单项
+  // 菜单项（按“当前站点是否在白名单”动态显示状态）
   // =========================================================
-  if (typeof GM_registerMenuCommand === "function") {
-    GM_registerMenuCommand(
-      "点击图片直开画廊：加入/移出当前站点白名单",
-      toggleClickOpenWhitelist
-    );
+  let clickOpenMenuId = null;
+  function refreshClickOpenMenu() {
+    if (typeof GM_registerMenuCommand !== "function") return;
+    const enabled = isClickOpenEnabled();
+    const label = enabled
+      ? "✅ 点击图片直开画廊：本站在白名单（点击移出）"
+      : "⚪ 点击图片直开画廊：本站不在白名单（点击加入）";
+    // 无注销能力且已注册过时跳过，避免重复堆叠菜单项
+    if (clickOpenMenuId !== null && typeof GM_unregisterMenuCommand !== "function") {
+      return;
+    }
+    if (clickOpenMenuId !== null) {
+      GM_unregisterMenuCommand(clickOpenMenuId);
+      clickOpenMenuId = null;
+    }
+    clickOpenMenuId = GM_registerMenuCommand(label, () => {
+      toggleClickOpenWhitelist();
+      refreshClickOpenMenu();
+    });
   }
+
+  refreshClickOpenMenu();
 
   // =========================================================
   // 启动
