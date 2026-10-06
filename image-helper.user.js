@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.10
+// @version      1.20.11
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -220,9 +220,13 @@
   // =========================================================
   const STYLE_ID = "sih-style-v1440";
   function injectStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
+    // v1.20.11：每次注入都覆写为当前版本样式，不再因页面上已有旧样式而跳过
+    // （SPA 页面热更新 / 脚本升级后复用旧文档时，旧 CSS 会让新版布局类失效）
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = STYLE_ID;
+    }
     style.textContent = `
 :root{
   --tm-font: system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -2421,7 +2425,7 @@
     overlay.style.cssText = `
             position: fixed; inset: 0;
             background: rgba(0,0,0,0.90);
-            z-index: 2147483646;
+            z-index: 2147483647;
             display: block;
             color: rgba(255,255,255,0.92);
             overflow: hidden;
