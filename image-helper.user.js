@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.11
+// @version      1.20.12
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -412,6 +412,12 @@
   padding: 10px 12px 12px 12px;
   gap: 10px;
   overflow: hidden;
+  /* v1.20.12: 改为 clip —— 舞台不再成为滚动容器。
+     隐藏态缩略图面板被 translateX 移出右缘后，其 transform 会撑大舞台的
+     scrollable overflow；切图时缩略图 scrollIntoView 会连带横向滚动舞台
+     （overflow:hidden 仍可被脚本/scrollIntoView 滚动），把整个画布推走，
+     右侧留下约 174px 空白。overflow:clip 只裁剪、不可滚动，根治该问题。 */
+  overflow: clip;
 }
 
 .tm-canvas{
@@ -2008,8 +2014,14 @@
     const active = thumbs[current];
     if (active) {
       active.classList.add("active");
+      // v1.20.12: 只滚动缩略图容器自身，绝不用 scrollIntoView ——
+      // 后者会把所有可滚动祖先（舞台/页面）一并滚动，隐藏态面板在视口外时
+      // 会横向推走舞台画布，图片右侧出现空白（并被记住，无法自动回位）。
       try {
-        active.scrollIntoView({ block: "nearest", inline: "center" });
+        const sr = strip.getBoundingClientRect();
+        const ar = active.getBoundingClientRect();
+        if (ar.top < sr.top) strip.scrollTop -= sr.top - ar.top + 4;
+        else if (ar.bottom > sr.bottom) strip.scrollTop += ar.bottom - sr.bottom + 4;
       } catch {
         /* ignore */
       }
