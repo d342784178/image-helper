@@ -3,9 +3,9 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.4
-// @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览，并支持脚本黑名单。
-// @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules, slideshow browsing, and a script blacklist.
+// @version      1.20.5
+// @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
+// @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
 // @license      MIT
 // @match        *://*/*
@@ -52,7 +52,6 @@
     BTN_POS: "sih_btn_pos_v2",
     BTN_POS_LOCKED: "sih_btn_pos_locked",
     FILTER: "sih_filter",
-    BLACKLIST: "sih_blacklist",
     SLIDE_LOAD_MODE: "sih_slide_load_mode",
     SLIDE_RAW_PREVIEW_DELAY_MS: "sih_slide_raw_preview_delay_ms",
     ENHANCED_IMAGE_DISCOVERY: "sih_enhanced_image_discovery",
@@ -84,7 +83,6 @@
     // 打开画廊时先自动“加载更多”（滚动触发懒加载/无限滚动）
     autoLoadMore: false,
     preloadRadius: 2,
-    blacklist: [],
     // 幻灯片主图加载模式：
     // - clean：直接加载清洗后的高清链接（默认）
     // - raw：直接加载原始链接（更省流/更快，但可能不清晰）
@@ -147,14 +145,9 @@
       DEFAULTS.autoLoadMore
     ),
     preloadRadius: DEFAULTS.preloadRadius,
-    blacklist: GM_getValue(STORE_KEYS.BLACKLIST, DEFAULTS.blacklist) || [],
   };
 
-  function saveBlacklist() {
-    GM_setValue(STORE_KEYS.BLACKLIST, SETTINGS.blacklist);
-  }
-
-  function normalizeBlacklistEntry(input) {
+  function normalizeDomainEntry(input) {
     const value = String(input || "")
       .trim()
       .toLowerCase()
@@ -174,11 +167,7 @@
       .trim()
       .toLowerCase();
     if (!host) return false;
-    return list.some((site) => normalizeBlacklistEntry(site) === host);
-  }
-
-  function isBlacklisted(hostname = location.hostname) {
-    return isHostExactMatchedInList(hostname, SETTINGS.blacklist);
+    return list.some((site) => normalizeDomainEntry(site) === host);
   }
 
   // 点击图片直开画廊：默认关闭，仅白名单站点启用
@@ -191,11 +180,11 @@
   }
 
   function toggleClickOpenWhitelist() {
-    const host = normalizeBlacklistEntry(location.hostname);
+    const host = normalizeDomainEntry(location.hostname);
     if (!host) return;
     const list = SETTINGS.clickOpenWhitelist || [];
     const idx = list.findIndex(
-      (entry) => normalizeBlacklistEntry(entry) === host
+      (entry) => normalizeDomainEntry(entry) === host
     );
     if (idx >= 0) {
       list.splice(idx, 1);
@@ -206,29 +195,6 @@
     }
     SETTINGS.clickOpenWhitelist = list;
     saveClickOpenWhitelist();
-  }
-
-  function refreshButtonVisibilityByBlacklist() {
-    const existedBtn = document.getElementById(BTN_ID);
-    const blacklistPanel = document.getElementById(BLACKLIST_PANEL_ID);
-    if (isBlacklisted()) {
-      if (overlay) closeSlideshow();
-      if (blacklistPanel) blacklistPanel.remove();
-      if (existedBtn) existedBtn.remove();
-      return false;
-    }
-    injectButton();
-    return true;
-  }
-
-  function canRunSlideshowScan(options = {}) {
-    const { silent = false } = options;
-    if (!isBlacklisted()) return true;
-    refreshButtonVisibilityByBlacklist();
-    if (!silent) {
-      alert("当前站点已在脚本黑名单中，已禁止打开幻灯片和扫描页面图片。");
-    }
-    return false;
   }
 
   // =========================================================
@@ -2287,7 +2253,6 @@
   }
 
   async function rebuildAndOpen(options = {}) {
-    if (!canRunSlideshowScan({ silent: true })) return;
     // 每次重新扫描前清空探测缓存，避免缓存无限增长
     contentLengthProbeCache.clear();
 
@@ -2535,7 +2500,6 @@
 
   function openSlideshow(options = {}) {
     if (overlay) return;
-    if (!canRunSlideshowScan()) return;
     buildOverlay();
     autoLoadNearEndDone = false; // 每次打开画廊重新武装“接近末尾自动加载”
     const loadMore = options.loadMore || SETTINGS.autoLoadMore;
@@ -2688,12 +2652,6 @@
     if (window.top && window.top !== window) return;
 
     injectStyles();
-
-    if (isBlacklisted()) {
-      const existed = document.getElementById(BTN_ID);
-      if (existed) existed.remove();
-      return;
-    }
 
     const existed = document.getElementById(BTN_ID);
     if (!SETTINGS.enableButton) {
@@ -2879,282 +2837,11 @@
   }
 
   // =========================================================
-  // 黑名单设置面板
-  // =========================================================
-  const BLACKLIST_PANEL_ID = "tm-blacklist-panel";
-
-  function openBlacklistPanel() {
-    injectStyles();
-    const existingPanel = document.getElementById(BLACKLIST_PANEL_ID);
-    if (existingPanel) {
-      existingPanel.remove();
-      return;
-    }
-
-    const viewportMargin = 18;
-    const anchorBottom = 210;
-    const maxPanelHeight = Math.max(
-      320,
-      window.innerHeight - anchorBottom - viewportMargin
-    );
-
-    const p = document.createElement("div");
-    p.id = BLACKLIST_PANEL_ID;
-    p.style.cssText = `
-            position: fixed;
-            right: ${viewportMargin}px;
-            bottom: ${anchorBottom}px;
-            width: min(520px, calc(100vw - ${viewportMargin * 2}px));
-            max-width: calc(100vw - ${viewportMargin * 2}px);
-            max-height: min(78vh, ${maxPanelHeight}px);
-            z-index: 2147483645;
-            background: rgba(18,18,20,0.78);
-            color: rgba(255,255,255,0.92);
-            border: 1px solid rgba(255,255,255,0.14);
-            border-radius: 14px;
-            box-shadow: 0 18px 50px rgba(0,0,0,0.50);
-            font-family: var(--tm-font);
-            padding: 14px;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        `;
-
-    p.innerHTML = `
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-                <div style="font-weight:900;font-size:18px;">域名过滤设置</div>
-                <div style="flex:1;"></div>
-                <button id="tm-bl-close" class="tm-btn tm-btn-ghost" style="padding:8px 10px;">关闭</button>
-            </div>
-
-            <div style="margin-bottom:12px;font-size:14px;color:rgba(255,255,255,0.74);line-height:1.5;flex:0 0 auto;">
-                脚本域名黑名单：在这些网站上脚本按钮不会显示，仅按精确域名匹配，不支持 *.example.com。
-            </div>
-
-            <div style="flex:1;min-height:0;overflow:auto;padding-right:4px;">
-                <div style="padding:10px 0 6px;font-weight:800;">脚本域名黑名单</div>
-                <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
-                    <input id="tm-bl-input" type="text" placeholder="输入域名（如 example.com）"
-                        style="flex:1;min-width:0;font-family:var(--tm-font);font-size:15px;padding:10px 12px;
-                        border-radius:12px;border:1px solid var(--tm-border);
-                        background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.94);outline:none;">
-                    <button id="tm-bl-add" class="tm-btn tm-btn-primary" style="padding:10px 16px;flex:0 0 auto;white-space:nowrap;">添加</button>
-                </div>
-                <div id="tm-bl-list" style="max-height:180px;overflow-y:auto;padding:8px 0;border-top:1px solid var(--tm-border);"></div>
-                <div style="margin-top:8px;display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;">
-                    <div style="color:rgba(255,255,255,0.74);font-size:13px;padding:8px 0;">
-                        共 <span id="tm-bl-count">0</span> 个网站
-                    </div>
-                    <button id="tm-bl-clear" class="tm-btn tm-btn-danger" style="padding:8px 12px;flex:0 0 auto;">清空脚本黑名单</button>
-                </div>
-            </div>
-
-            <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex:0 0 auto;flex-wrap:wrap;">
-                <button id="tm-bl-export" class="tm-btn" style="padding:8px 12px;">导出配置</button>
-                <button id="tm-bl-import" class="tm-btn tm-btn-primary" style="padding:8px 12px;">导入配置</button>
-            </div>
-            <div style="display:none;">
-                <input id="tm-bl-import-file" type="file" accept=".json" />
-            </div>
-        `;
-
-    const listEl = p.querySelector("#tm-bl-list");
-    const inputEl = p.querySelector("#tm-bl-input");
-    const countEl = p.querySelector("#tm-bl-count");
-
-    function normalizeDomainList(list) {
-      return (list || [])
-        .map((entry) => normalizeBlacklistEntry(entry))
-        .filter(Boolean)
-        .filter((entry, index, arr) => arr.indexOf(entry) === index);
-    }
-
-    function syncUiAfterBlacklistChange() {
-      if (isBlacklisted()) {
-        const existedBtn = document.getElementById(BTN_ID);
-        if (existedBtn) existedBtn.remove();
-        if (overlay) closeSlideshow();
-      } else {
-        injectButton();
-      }
-    }
-
-    function renderSimpleList(
-      targetEl,
-      targetList,
-      emptyText,
-      deleteClassName
-    ) {
-      targetEl.textContent = "";
-      if (!targetList || targetList.length === 0) {
-        const emptyEl = document.createElement("div");
-        emptyEl.style.cssText =
-          "text-align:center;padding:20px;color:rgba(255,255,255,0.54);font-size:14px;";
-        emptyEl.textContent = emptyText;
-        targetEl.appendChild(emptyEl);
-        return;
-      }
-
-      targetList.forEach((site, idx) => {
-        const item = document.createElement("div");
-        item.style.cssText =
-          "display:flex;align-items:center;gap:8px;padding:8px 0;";
-
-        const siteEl = document.createElement("span");
-        siteEl.style.cssText =
-          "flex:1;font-family:monospace;font-size:14px;color:rgba(255,255,255,0.88);word-break:break-all;";
-        siteEl.textContent = site;
-
-        const deleteBtn = document.createElement("button");
-        deleteBtn.className = `${deleteClassName} tm-btn tm-btn-danger`;
-        deleteBtn.dataset.idx = String(idx);
-        deleteBtn.style.cssText = "padding:6px 12px;font-size:13px;";
-        deleteBtn.textContent = "删除";
-
-        item.appendChild(siteEl);
-        item.appendChild(deleteBtn);
-        targetEl.appendChild(item);
-      });
-    }
-
-    function renderList() {
-      SETTINGS.blacklist = normalizeDomainList(SETTINGS.blacklist);
-
-      renderSimpleList(
-        listEl,
-        SETTINGS.blacklist,
-        "暂无脚本黑名单网站（在所有网站启用脚本）",
-        "tm-bl-delete"
-      );
-
-      countEl.textContent = SETTINGS.blacklist.length;
-    }
-
-    listEl.addEventListener("click", (e) => {
-      if (e.target.classList.contains("tm-bl-delete")) {
-        const idx = parseInt(e.target.dataset.idx, 10);
-        SETTINGS.blacklist.splice(idx, 1);
-        saveBlacklist();
-        renderList();
-        syncUiAfterBlacklistChange();
-      }
-    });
-
-    p.querySelector("#tm-bl-add").onclick = () => {
-      const input = normalizeBlacklistEntry(inputEl.value);
-      if (!input) return;
-      if (SETTINGS.blacklist.includes(input)) {
-        alert("该网站已存在于脚本黑名单中");
-        return;
-      }
-      SETTINGS.blacklist.push(input);
-      SETTINGS.blacklist = normalizeDomainList(SETTINGS.blacklist);
-      saveBlacklist();
-      inputEl.value = "";
-      renderList();
-      syncUiAfterBlacklistChange();
-    };
-
-    inputEl.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        p.querySelector("#tm-bl-add").click();
-      }
-    });
-
-    p.querySelector("#tm-bl-clear").onclick = () => {
-      if (SETTINGS.blacklist.length === 0) return;
-      if (confirm("确认清空脚本黑名单吗？之后将在所有网站启用脚本按钮。")) {
-        SETTINGS.blacklist = [];
-        saveBlacklist();
-        renderList();
-        syncUiAfterBlacklistChange();
-      }
-    };
-
-    p.querySelector("#tm-bl-export").onclick = () => {
-      const data = JSON.stringify(
-        {
-          blacklist: SETTINGS.blacklist,
-          version: "1.2",
-        },
-        null,
-        2
-      );
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `image-helper-domain-filters-${yyyymmdd()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-
-    const importFileInput = p.querySelector("#tm-bl-import-file");
-    p.querySelector("#tm-bl-import").onclick = () => {
-      importFileInput.click();
-    };
-
-    importFileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const data = JSON.parse(event.target.result);
-          const importedBlacklist = Array.isArray(data.blacklist)
-            ? normalizeDomainList(data.blacklist)
-            : [];
-
-          if (importedBlacklist.length === 0) {
-            alert("导入的脚本黑名单配置为空");
-            return;
-          }
-
-          const merge = confirm(
-            `检测到脚本黑名单 ${importedBlacklist.length} 项。\n\n点击"确定"将合并到现有配置，点击"取消"将替换现有配置。`
-          );
-
-          if (merge) {
-            SETTINGS.blacklist = normalizeDomainList([
-              ...SETTINGS.blacklist,
-              ...importedBlacklist,
-            ]);
-          } else {
-            SETTINGS.blacklist = importedBlacklist;
-          }
-
-          saveBlacklist();
-          renderList();
-          syncUiAfterBlacklistChange();
-          alert(
-            `导入成功！当前脚本黑名单共 ${SETTINGS.blacklist.length} 个网站。`
-          );
-        } catch (err) {
-          console.error("导入域名过滤配置失败：", err);
-          alert("导入失败：无法解析文件");
-        }
-        importFileInput.value = "";
-      };
-      reader.readAsText(file);
-    };
-
-    p.querySelector("#tm-bl-close").onclick = () => p.remove();
-
-    renderList();
-    document.body.appendChild(p);
-    inputEl.focus();
-  }
-
-  // =========================================================
   // v1.20 需求3：点击网页图片直接进入画廊
   // =========================================================
   const OWN_UI_SELECTOR = [
     `#${BTN_ID}`,
     "#tm-img-slide-overlay",
-    `#${BLACKLIST_PANEL_ID}`,
   ].join(",");
 
   function onDocumentImageClick(e) {
@@ -3164,7 +2851,6 @@
     // 修饰键点击保留网页原本行为（新标签打开、站点自身逻辑等）
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     if (overlay) return;
-    if (isBlacklisted()) return;
     if (window !== window.top) return;
 
     const target = e.target;
@@ -3220,7 +2906,6 @@
   // 菜单项
   // =========================================================
   if (typeof GM_registerMenuCommand === "function") {
-    GM_registerMenuCommand("黑名单设置", openBlacklistPanel);
     GM_registerMenuCommand(
       "点击图片直开画廊：加入/移出当前站点白名单",
       toggleClickOpenWhitelist
