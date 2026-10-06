@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.7
+// @version      1.20.8
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -257,16 +257,16 @@
 }
 
 .tm-topbar{
-  display:flex; align-items:center; gap: 14px; padding: 12px 14px;
+  display:flex; align-items:center; gap: 8px; padding: 6px 10px;
   flex-wrap: wrap;
 }
 
-.tm-top-left{ display:flex; align-items:center; gap:12px; flex-wrap: wrap; }
-.tm-top-right{ display:flex; align-items:center; gap:10px; flex-wrap: wrap; justify-content:flex-end; }
+.tm-top-left{ display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+.tm-top-right{ display:flex; align-items:center; gap:6px; flex-wrap: wrap; justify-content:flex-end; }
 
 .tm-filename{
   flex: 1 1 320px; min-width: 220px; text-align: center; padding: 0 12px;
-  font-size: 20px; font-weight: 900; letter-spacing: 0.2px;
+  font-size: 15px; font-weight: 800; letter-spacing: 0.2px;
   color: rgba(255,255,255,0.94);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   user-select: text;
@@ -279,9 +279,9 @@
   border: 1px solid var(--tm-border);
   background: var(--tm-btn);
   color: rgba(255,255,255,0.92);
-  font: 900 16px/1 var(--tm-font);
-  padding: 10px 12px;
-  border-radius: 12px;
+  font: 800 13px/1 var(--tm-font);
+  padding: 6px 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition: transform .12s ease, background .15s ease,
               border-color .15s ease, box-shadow .18s ease, opacity .15s ease;
@@ -336,15 +336,15 @@
 }
 
 .tm-pill{
-  display:inline-flex; align-items:center; gap:8px;
-  padding: 8px 12px;
+  display:inline-flex; align-items:center; gap:6px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--tm-border);
   background: rgba(0,0,0,0.18);
 }
 
-.tm-kv{ font-size: 16px; color: rgba(255,255,255,0.94); letter-spacing: .2px; }
-.tm-kv small{ font-size: 14px; color: rgba(255,255,255,0.74); font-weight: 800; }
+.tm-kv{ font-size: 13px; color: rgba(255,255,255,0.94); letter-spacing: .2px; }
+.tm-kv small{ font-size: 12px; color: rgba(255,255,255,0.74); font-weight: 800; }
 
 .tm-link-row{
   display: flex;
@@ -2374,8 +2374,6 @@
 
                 <div class="tm-top-right">
                     <button id="tm-loadmore" class="tm-btn" title="滚动页面到底部，触发懒加载/无限滚动后再重新扫描">加载更多</button>
-                    <button id="tm-open" class="tm-btn">新标签打开</button>
-                    <button id="tm-refresh" class="tm-btn">重新扫描</button>
                     <button id="tm-close" class="tm-btn tm-btn-danger">关闭</button>
 
                 </div>
@@ -2422,15 +2420,9 @@
 
     bindClick($("#tm-prev"), () => show(current - 1));
     bindClick($("#tm-next"), () => show(current + 1));
-    bindClick($("#tm-refresh"), () => rebuildAndOpen({ preserveUrl: getCurrentRawUrl() }));
     bindClick($("#tm-loadmore"), () =>
       runLoadMoreRebuild(getCurrentRawUrl())
     );
-
-    bindClick($("#tm-open"), () => {
-      if (!list.length) return;
-      window.open(list[current].cleanUrl, "_blank", "noopener,noreferrer");
-    });
 
     const copyBtnTimers = new WeakMap();
     function flashCopiedButton(btn) {
