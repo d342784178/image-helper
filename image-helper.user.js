@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.6
+// @version      1.20.7
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -57,7 +57,9 @@
     SLIDE_RAW_PREVIEW_DELAY_MS: "sih_slide_raw_preview_delay_ms",
     ENHANCED_IMAGE_DISCOVERY: "sih_enhanced_image_discovery",
     PROBE_FILESIZE: "sih_probe_filesize",
-    CLICK_OPEN_WHITELIST: "sih_click_open_whitelist",
+    SITE_WHITELIST: "sih_site_whitelist",
+    // 旧键（v1.20.4-1.20.6 点击直开白名单），仅用于一次性迁移
+    LEGACY_CLICK_OPEN_WHITELIST: "sih_click_open_whitelist",
     SYNC_PAGE_SCROLL: "sih_sync_page_scroll",
     AUTO_LOAD_MORE: "sih_auto_load_more",
   };
@@ -77,8 +79,8 @@
     maxElementsForBgScan: 8000,
     enhancedImageDiscovery: false,
     probeFilesize: true,
-    // 点击网页中的（大）图片直接打开画廊：默认关闭，仅白名单站点启用
-    clickOpenWhitelist: [],
+    // 站点白名单：默认整站不生效，加入白名单的站点才显示图片按钮并启用画廊等功能
+    siteWhitelist: [],
     // 画廊翻页时，网页同步滚动到对应图片
     syncPageScroll: true,
     // 打开画廊时先自动“加载更多”（滚动触发懒加载/无限滚动）
@@ -132,10 +134,13 @@
       STORE_KEYS.PROBE_FILESIZE,
       DEFAULTS.probeFilesize
     ),
-    clickOpenWhitelist:
+    siteWhitelist:
       GM_getValue(
-        STORE_KEYS.CLICK_OPEN_WHITELIST,
-        DEFAULTS.clickOpenWhitelist
+        STORE_KEYS.SITE_WHITELIST,
+        GM_getValue(
+          STORE_KEYS.LEGACY_CLICK_OPEN_WHITELIST,
+          DEFAULTS.siteWhitelist
+        )
       ) || [],
     syncPageScroll: GM_getValue(
       STORE_KEYS.SYNC_PAGE_SCROLL,
@@ -171,31 +176,43 @@
     return list.some((site) => normalizeDomainEntry(site) === host);
   }
 
-  // 点击图片直开画廊：默认关闭，仅白名单站点启用
-  function isClickOpenEnabled(hostname = location.hostname) {
-    return isHostExactMatchedInList(hostname, SETTINGS.clickOpenWhitelist);
+  // 站点总开关：仅白名单站点启用图片助手（悬浮按钮/画廊/点击图片直开）
+  function isSiteEnabled(hostname = location.hostname) {
+    return isHostExactMatchedInList(hostname, SETTINGS.siteWhitelist);
   }
 
-  function saveClickOpenWhitelist() {
-    GM_setValue(STORE_KEYS.CLICK_OPEN_WHITELIST, SETTINGS.clickOpenWhitelist);
+  function saveSiteWhitelist() {
+    GM_setValue(STORE_KEYS.SITE_WHITELIST, SETTINGS.siteWhitelist);
   }
 
-  function toggleClickOpenWhitelist() {
+  function toggleSiteWhitelist() {
     const host = normalizeDomainEntry(location.hostname);
     if (!host) return;
-    const list = SETTINGS.clickOpenWhitelist || [];
+    const list = SETTINGS.siteWhitelist || [];
     const idx = list.findIndex(
       (entry) => normalizeDomainEntry(entry) === host
     );
     if (idx >= 0) {
       list.splice(idx, 1);
-      alert(`已将「${host}」移出白名单：点击图片不再直接打开画廊。`);
+      alert(`已将「${host}」移出白名单：图片助手已在本站停用。`);
     } else {
       list.push(host);
-      alert(`已将「${host}」加入白名单：点击图片将直接打开画廊。`);
+      alert(`已将「${host}」加入白名单：图片助手已在本站启用。`);
     }
-    SETTINGS.clickOpenWhitelist = list;
-    saveClickOpenWhitelist();
+    SETTINGS.siteWhitelist = list;
+    saveSiteWhitelist();
+    refreshSiteVisibility();
+  }
+
+  // 加入/移出白名单后，立即显示/隐藏悬浮按钮与画廊
+  function refreshSiteVisibility() {
+    if (isSiteEnabled()) {
+      injectButton();
+      return;
+    }
+    if (overlay) closeSlideshow();
+    const existedBtn = document.getElementById(BTN_ID);
+    if (existedBtn) existedBtn.remove();
   }
 
   // =========================================================
@@ -2501,6 +2518,7 @@
 
   function openSlideshow(options = {}) {
     if (overlay) return;
+    if (!isSiteEnabled()) return;
     buildOverlay();
     autoLoadNearEndDone = false; // 每次打开画廊重新武装“接近末尾自动加载”
     const loadMore = options.loadMore || SETTINGS.autoLoadMore;
@@ -2655,7 +2673,7 @@
     injectStyles();
 
     const existed = document.getElementById(BTN_ID);
-    if (!SETTINGS.enableButton) {
+    if (!isSiteEnabled() || !SETTINGS.enableButton) {
       if (existed) existed.remove();
       return;
     }
@@ -2846,7 +2864,7 @@
   ].join(",");
 
   function onDocumentImageClick(e) {
-    if (!isClickOpenEnabled()) return;
+    if (!isSiteEnabled()) return;
     if (e.defaultPrevented) return;
     if (e.button !== 0 && e.button !== undefined) return;
     // 修饰键点击保留网页原本行为（新标签打开、站点自身逻辑等）
@@ -2909,10 +2927,10 @@
   let clickOpenMenuId = null;
   function refreshClickOpenMenu() {
     if (typeof GM_registerMenuCommand !== "function") return;
-    const enabled = isClickOpenEnabled();
+    const enabled = isSiteEnabled();
     const label = enabled
-      ? "✅ 点击图片直开画廊：本站在白名单（点击移出）"
-      : "⚪ 点击图片直开画廊：本站不在白名单（点击加入）";
+      ? "✅ 本站在白名单：图片助手已启用（点击移出）"
+      : "⚪ 本站不在白名单：图片助手未启用（点击加入）";
     // 无注销能力且已注册过时跳过，避免重复堆叠菜单项
     if (clickOpenMenuId !== null && typeof GM_unregisterMenuCommand !== "function") {
       return;
@@ -2922,7 +2940,7 @@
       clickOpenMenuId = null;
     }
     clickOpenMenuId = GM_registerMenuCommand(label, () => {
-      toggleClickOpenWhitelist();
+      toggleSiteWhitelist();
       refreshClickOpenMenu();
     });
   }
