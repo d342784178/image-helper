@@ -3,7 +3,7 @@
 // @name:zh-CN   图片助手
 // @name:en      Image Helper
 // @namespace    https://github.com/tlgj/Browser-Scripts
-// @version      1.20.12
+// @version      1.20.13
 // @description  提取页面图片并清洗到高清，支持多品牌 URL 规则、幻灯片浏览。
 // @description:en Extracts page images and cleans them to high definition. Supports multi-brand URL rules and slideshow browsing.
 // @author       tlgj
@@ -2214,6 +2214,7 @@
       if (mainZoom.scale <= 1.01) return;
       mainImgEl.setPointerCapture?.(e.pointerId);
       mainZoom.dragging = true;
+      mainZoom.dragged = false;
       mainZoom.startX = e.clientX;
       mainZoom.startY = e.clientY;
       mainZoom.startTx = mainZoom.tx;
@@ -2226,6 +2227,7 @@
       if (!mainZoom.dragging) return;
       const dx = e.clientX - mainZoom.startX;
       const dy = e.clientY - mainZoom.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mainZoom.dragged = true;
       mainZoom.tx = mainZoom.startTx + dx;
       mainZoom.ty = mainZoom.startTy + dy;
       applyMainZoom();
@@ -2236,6 +2238,8 @@
     const endDrag = (e) => {
       if (!mainZoom.dragging) return;
       mainZoom.dragging = false;
+      // v1.20.13: 拖动平移结束的“点击”要与真正点击区分开（400ms 内忽略）
+      if (mainZoom.dragged) mainZoom.dragEndAt = Date.now();
       e.preventDefault();
       e.stopPropagation();
     };
@@ -2520,6 +2524,7 @@
     const topbarEl = overlay.querySelector(".tm-topbar");
     const stageEl = overlay.querySelector(".tm-stage");
     let chromeHideTimer = null;
+    let chromeShownAt = 0; // v1.20.13: 外壳最近一次展开时刻（保证最短展示窗口）
 
     function chromeHovered() {
       return (
@@ -2529,6 +2534,7 @@
     }
     function showChrome() {
       clearTimeout(chromeHideTimer);
+      chromeShownAt = Date.now();
       stripPanel.classList.remove("tm-strip-hidden");
       stripHandle.classList.remove("tm-handle-show");
       topbarEl.classList.remove("tm-chrome-hidden");
@@ -2543,6 +2549,10 @@
     }
     function scheduleChromeHide(delay = 1200) {
       clearTimeout(chromeHideTimer);
+      // v1.20.13: 无论从哪个入口展开（打开/拉手/点击图片），都保证至少完整
+      // 展示 3 秒再进入“指针停顿即收”的节奏，避免刚点开就被 mousemove 收掉
+      const minEnd = chromeShownAt + 3000;
+      if (Date.now() < minEnd) delay = Math.max(delay, minEnd - Date.now());
       chromeHideTimer = setTimeout(function tick() {
         if (!overlay || !stripPanel || !stripPanel.isConnected) return;
         // 指针还停在外壳（顶栏或侧栏）上则继续等待
@@ -2617,6 +2627,16 @@
     // （按需求移除：单击 100% 放大/还原）
     const mainImgBtn = $("#tm-main-img");
     bindMainImageZoom(mainImgBtn);
+
+    // v1.20.13: 点击图片 → 显示标题栏 + 侧边缩略图（联动外壳）；
+    // 展开后保留自动收缩（最短 3 秒 + 指针停顿收起）与 ‹/› 手动开合
+    bindClick(mainImgBtn, () => {
+      if (!overlay) return;
+      // 刚结束的拖动平移（缩放态）不算点击，避免误触
+      if (Date.now() - (mainZoom.dragEndAt || 0) < 400) return;
+      showChrome();
+      scheduleChromeHide(3000);
+    });
 
     let wheelLock = 0;
     const canvasEl = $("#tm-canvas");
